@@ -1,0 +1,335 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- [[ CONFIGURATION & STATE ]]
+local UI_STATE = {
+    Visible = true,
+    CurrentTab = "ESP",
+    ESP_Enabled = false,
+    WallCheck_Enabled = false,
+    TeamCheck_Enabled = true,
+    Aimbot_Enabled = false,
+    Aimbot_FOV = 150, -- Radius of the lock-on circle
+    Loadout = "None"
+}
+
+local ESP_SETTINGS = {
+    AllyColor = Color3.fromRGB(50, 255, 50),
+    EnemyColor = Color3.fromRGB(255, 50, 50),
+    WallColor = Color3.fromRGB(150, 150, 150),
+    DefaultTransparency = 0.5,
+    OccludedTransparency = 0.8
+}
+
+local ESP_CACHE = {}
+
+-- [[ UTILITY FUNCTIONS ]]
+local function safe_call(func, ...)
+    local success, result = pcall(func, ...)
+    if not success then
+        warn("[HUB ERROR]: " .. tostring(result))
+    end
+    return success, result
+end
+
+-- [[ AIMBOT LOGIC ]]
+local function get_closest_player()
+    local closest_player = nil
+    local shortest_distance = UI_STATE.Aimbot_FOV
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+
+        if UI_STATE.TeamCheck_Enabled and player.Team == LocalPlayer.Team then continue end
+
+        local char = player.Character
+        if char and char:FindFirstChild("Head") then
+            local pos, on_screen = Camera:WorldToViewportPoint(char.Head.Position)
+            if on_screen then
+                local distance = (Vector2.new(pos.X, pos.Y) - UserInputService:GetMouseLocation()).Magnitude
+                if distance < shortest_distance then
+                    closest_player = player
+                    shortest_distance = distance
+                end
+            end
+        end
+    end
+    return closest_player
+end
+
+-- [[ UI CONSTRUCTION ]]
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "AdminUtilityHub"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.ZIndexBehavior = Enum.ZIndexBehavior.Sibling
+ScreenGui.Parent = game:GetService("CoreGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Name = "MainFrame"
+MainFrame.Size = UDim2.new(0, 550, 0, 350)
+MainFrame.Position = UDim2.new(0.5, -275, 0.5, -175)
+MainFrame.BackgroundColor3 = Color3.fromRGB(25, 25, 25)
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner")
+UICorner.CornerRadius = UDim.new(0, 8)
+UICorner.Parent = MainFrame
+
+local TopBar = Instance.new("Frame")
+TopBar.Name = "TopBar"
+TopBar.Size = UDim2.new(1, 0, 0, 40)
+TopBar.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local TopCorner = Instance.new("UICorner")
+TopCorner.CornerRadius = UDim.new(0, 8)
+TopCorner.Parent = TopBar
+
+local Title = Instance.new("TextLabel")
+Title.Text = "ADMIN UTILITY HUB | UNFAIR EDITION"
+Title.Size = UDim2.new(0, 200, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.BackgroundTransparency = 1
+Title.TextColor3 = Color3.fromRGB(220, 220, 220)
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 14
+Title.Parent = TopBar
+
+local NavContainer = Instance.new("Frame")
+NavContainer.Name = "NavContainer"
+NavContainer.Size = UDim2.new(0, 140, 1, -40)
+NavContainer.Position = UDim2.new(0, 0, 0, 40)
+NavContainer.BackgroundColor3 = Color3.fromRGB(30, 30, 30)
+NavContainer.BorderSizePixel = 0
+NavContainer.Parent = MainFrame
+
+local NavCorner = Instance.new("UICorner")
+NavCorner.CornerRadius = UDim.new(0, 8)
+NavCorner.Parent = NavContainer
+
+local ContentContainer = Instance.new("Frame")
+ContentContainer.Name = "ContentContainer"
+ContentContainer.Size = UDim2.new(1, -150, 1, -50)
+ContentContainer.Position = UDim2.new(0, 150, 0, 50)
+ContentContainer.BackgroundTransparency = 1
+ContentContainer.Parent = MainFrame
+
+local TabPages = {}
+
+local function create_tab(name)
+    local Page = Instance.new("ScrollingFrame")
+    Page.Name = name .. "Page"
+    Page.Size = UDim2.new(1, 0, 1, 0)
+    Page.BackgroundTransparency = 1
+    Page.BorderSizePixel = 0
+    Page.ScrollBarThickness = 4
+    Page.Visible = (name == "ESP")
+    Page.Parent = ContentContainer
+
+    local Layout = Instance.new("UIListLayout")
+    Layout.Padding = UDim.new(0, 10)
+    Layout.Parent = Page
+
+    TabPages[name] = Page
+    return Page
+end
+
+-- [[ ESP TAB ]]
+local ESP_Page = create_tab("ESP")
+local ESP_Toggle = Instance.new("TextButton")
+ESP_Toggle.Text = "Toggle ESP: OFF"
+ESP_Toggle.Size = UDim2.new(1, -20, 0, 40)
+ESP_Toggle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+ESP_Toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+ESP_Toggle.Font = Enum.Font.Gotham
+ESP_Toggle.Parent = ESP_Page
+
+local WallCheck_Toggle = Instance.new("TextButton")
+WallCheck_Toggle.Text = "Raycast Wall Check: OFF"
+WallCheck_Toggle.Size = UDim2.new(1, -20, 0, 40)
+WallCheck_Toggle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+WallCheck_Toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+WallCheck_Toggle.Font = Enum.Font.Gotham
+WallCheck_Toggle.Parent = ESP_Page
+
+-- [[ COMBAT TAB (LOCK ON) ]]
+local Combat_Page = create_tab("Combat")
+local Aimbot_Toggle = Instance.new("TextButton")
+Aimbot_Toggle.Text = "Lock-On (Aimbot): OFF"
+Aimbot_Toggle.Size = UDim2.new(1, -20, 0, 40)
+Aimbot_Toggle.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+Aimbot_Toggle.TextColor3 = Color3.fromRGB(255, 255, 255)
+Aimbot_Toggle.Font = Enum.Font.Gotham
+Aimbot_Toggle.Parent = Combat_Page
+
+-- [[ TELEPORT TAB ]]
+local TP_Page = create_tab("Teleport")
+local TP_Input = Instance.new("TextBox")
+TP_Input.PlaceholderText = "Enter Username..."
+TP_Input.Size = UDim2.new(1, -20, 0, 40)
+TP_Input.BackgroundColor3 = Color3.fromRGB(40, 40, 40)
+TP_Input.TextColor3 = Color3.fromRGB(255, 255, 255)
+TP_Input.Font = Enum.Font.Gotham
+TP_Input.Text = ""
+TP_Input.Parent = TP_Page
+
+local TP_Button = Instance.new("TextButton")
+TP_Button.Text = "Execute Teleport"
+TP_Button.Size = UDim2.new(1, -20, 0, 40)
+TP_Button.BackgroundColor3 = Color3.fromRGB(60, 60, 60)
+TP_Button.TextColor3 = Color3.fromRGB(255, 255, 255)
+TP_Button.Font = Enum.Font.Gotham
+TP_Button.Parent = TP_Page
+
+-- [[ LOADOUT TAB ]]
+local Loadout_Page = create_tab("Loadout")
+local Loadout_Label = Instance.new("TextLabel")
+Loadout_Label.Text = "Select Combat Profile (Visual Only):"
+Loadout_Label.Size = UDim2.new(1, -20, 0, 30)
+Loadout_Label.BackgroundTransparency = 1
+Loadout_Label.TextColor3 = Color3.fromRGB(180, 180, 180)
+Loadout_Label.Font = Enum.Font.GothamBold
+Loadout_Label.Parent = Loadout_Page
+
+local function create_loadout_btn(profile_name)
+    local btn = Instance.new("TextButton")
+    btn.Text = profile_name
+    btn.Size = UDim2.new(1, -20, 0, 40)
+    btn.BackgroundColor3 = Color3.fromRGB(45, 45, 45)
+    btn.TextColor3 = Color3.fromRGB(255, 255, 255)
+    btn.Font = Enum.Font.Gotham
+    btn.Parent = Loadout_Page
+
+    btn.MouseButton1Click:Connect(function()
+        UI_STATE.Loadout = profile_name
+        print("[LOADOUT]: Profile set to " .. profile_name)
+    end)
+end
+
+create_loadout_btn("Assault")
+create_loadout_btn("Support")
+create_loadout_btn("Scout")
+
+-- [[ NAVIGATION LOGIC ]]
+local function switch_tab(tab_name)
+    UI_STATE.CurrentTab = tab_name
+    for name, page in pairs(TabPages) do
+        page.Visible = (name == tab_name)
+    end
+end
+
+local nav_layout = Instance.new("UIListLayout")
+nav_layout.Parent = NavContainer
+
+for tab_name, _ in pairs(TabPages) do
+    local btn = Instance.new("TextButton")
+    btn.Text = tab_name
+    btn.Size = UDim2.new(1, 0, 0, 40)
+    btn.BackgroundColor3 = Color3.fromRGB(35, 35, 35)
+    btn.TextColor3 = Color3.fromRGB(150, 150, 150)
+    btn.Font = Enum.Font.Gotham
+    btn.BorderSizePixel = 0
+    btn.Parent = NavContainer
+
+    btn.MouseButton1Click:Connect(function()
+        switch_tab(tab_name)
+    end)
+end
+
+-- [[ ENGINE: COMBAT/LOCK-ON LOOP ]]
+RunService.RenderStepped:Connect(function()
+    if not UI_STATE.Aimbot_Enabled then return end
+
+    local target = get_closest_player()
+    if target and target.Character and target.Character:FindFirstChild("Head") then
+        -- Smoothly lock camera to head
+        Camera.CFrame = CFrame.new(Camera.CFrame.Position, target.Character.Head.Position)
+    end
+end)
+
+-- [[ ENGINE: ESP LOOP ]]
+task.spawn(function()
+    RunService.Heartbeat:Connect(function()
+        if not UI_STATE.ESP_Enabled then
+            for _, highlight in pairs(ESP_CACHE) do highlight:Destroy() end
+            ESP_CACHE = {}
+            return
+        end
+
+        for _, player in pairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+
+            safe_call(function()
+                local char = player.Character
+                if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+
+                local highlight = ESP_CACHE[player]
+                if not highlight then
+                    highlight = Instance.new("Highlight")
+                    highlight.Name = "HubESP_" .. player.Name
+                    highlight.FillTransparency = ESP_SETTINGS.DefaultTransparency
+                    highlight.OutlineTransparency = 0
+                    highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                    highlight.Parent = char
+                    ESP_CACHE[player] = highlight
+                end
+
+                if UI_STATE.TeamCheck_Enabled then
+                    if player.Team == LocalPlayer.Team then
+                        highlight.FillColor = ESP_SETTINGS.AllyColor
+                        highlight.OutlineColor = ESP_SETTINGS.AllyColor
+                    else
+                        highlight.FillColor = ESP_SETTINGS.EnemyColor
+                        highlight.OutlineColor = ESP_SETTINGS.EnemyColor
+                    end
+                end
+            end)
+        end
+    end)
+end)
+
+-- [[ BUTTON EVENTS ]]
+ESP_Toggle.MouseButton1Click:Connect(function()
+    UI_STATE.ESP_Enabled = not UI_STATE.ESP_Enabled
+    ESP_Toggle.Text = "Toggle ESP: " .. (UI_STATE.ESP_Enabled and "ON" or "OFF")
+    ESP_Toggle.BackgroundColor3 = UI_STATE.ESP_Enabled and Color3.fromRGB(60, 120, 60) or Color3.fromRGB(45, 45, 45)
+end)
+
+Aimbot_Toggle.MouseButton1Click:Connect(function()
+    UI_STATE.Aimbot_Enabled = not UI_STATE.Aimbot_Enabled
+    Aimbot_Toggle.Text = "Lock-On (Aimbot): " .. (UI_STATE.Aimbot_Enabled and "ON" or "OFF")
+    Aimbot_Toggle.BackgroundColor3 = UI_STATE.Aimbot_Enabled and Color3.fromRGB(60, 120, 60) or Color3.fromRGB(45, 45, 45)
+end)
+
+TP_Button.MouseButton1Click:Connect(function()
+    local query = TP_Input.Text:lower()
+    if query == "" then return end
+    local target_player = nil
+    for _, p in pairs(Players:GetPlayers()) do
+        if p.Name:lower():find(query) or p.DisplayName:lower():find(query) then
+            target_player = p
+            break
+        end
+    end
+    if target_player then
+        safe_call(function()
+            LocalPlayer.Character.HumanoidRootPart.CFrame = target_player.Character.HumanoidRootPart.CFrame * CFrame.new(0, 2, 0)
+        end)
+    end
+end)
+
+UserInputService.InputBegan:Connect(function(input, processed)
+    if processed then return end
+    if input.KeyCode == Enum.KeyCode.RightControl then
+        UI_STATE.Visible = not UI_STATE.Visible
+        MainFrame.Visible = UI_STATE.Visible
+    end
+end)
