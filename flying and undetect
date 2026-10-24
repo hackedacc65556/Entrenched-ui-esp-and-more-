@@ -1,0 +1,55 @@
+local isFlying = false
+local flySpeed = 50
+
+local function startFly()
+    isFlying = true
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        char.Humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+    end
+end
+
+local function stopFly()
+    isFlying = false
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        char.Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+    end
+end
+
+-- Update the RenderStepped loop's Fly section to this:
+RunService.RenderStepped:Connect(function()
+    -- ... (Keep Aimbot, Triggerbot, and Speed Hack as they were) ...
+
+    if UI_STATE.Fly_Enabled and isFlying then
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChild("Humanoid")
+
+        if root and hum then
+            -- 1. Spoof Velocity to 0 to bypass basic speed checks
+            root.Velocity = Vector3.new(0, 0, 0)
+
+            -- 2. Calculate Movement Direction
+            local moveDir = Vector3.new(0,0,0)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0,1,0) end
+
+            -- 3. Apply CFrame change (Undetectable by BodyMover checks)
+            if moveDir.Magnitude > 0 then
+                root.CFrame = root.CFrame + (moveDir.Unit * (UI_STATE.FlySpeed / 10))
+            end
+
+            -- Keep the state as Physics to prevent "Falling" detection
+            hum:ChangeState(Enum.HumanoidStateType.Physics)
+        end
+    end
+end)
+
+
+Pro-Tips for staying undetected:
+*   Don't fly too fast: If you set FlySpeed to 500, the server will notice you teleporting from Point A to Point B instantly and kick you. Keep it around 50–100.
