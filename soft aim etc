@@ -1,0 +1,345 @@
+local Players = game:GetService("Players")
+local RunService = game:GetService("RunService")
+local UserInputService = game:GetService("UserInputService")
+local TweenService = game:GetService("TweenService")
+local Lighting = game:GetService("Lighting")
+
+local LocalPlayer = Players.LocalPlayer
+local Camera = workspace.CurrentCamera
+
+-- [[ CONFIGURATION & STATE ]]
+local UI_STATE = {
+    Visible = true,
+    CurrentTab = "Combat",
+    -- Combat
+    Aimbot_Enabled = false,
+    Aimbot_Smooth = true, -- Smooth movement instead of snapping
+    Triggerbot_Enabled = false,
+    Aimbot_FOV = 150,
+    -- Movement
+    Speed_Enabled = false,
+    WalkSpeed = 100,
+    InfJump_Enabled = false,
+    Noclip_Enabled = false,
+    Fly_Enabled = false,
+    FlySpeed = 50,
+    -- Visuals
+    ESP_Enabled = false,
+    TeamCheck_Enabled = true,
+    Fullbright_Enabled = false,
+    FOV_Enabled = false,
+    CustomFOV = 110,
+}
+
+local ESP_SETTINGS = {
+    AllyColor = Color3.fromRGB(0, 255, 127),
+    EnemyColor = Color3.fromRGB(255, 0, 76),
+    DefaultTransparency = 0.5
+}
+
+local ESP_CACHE = {}
+
+-- [[ UTILITY FUNCTIONS ]]
+local function safe_call(func, ...)
+    local success, result = pcall(func, ...)
+    if not success then warn("[HUB ERROR]: " .. tostring(result)) end
+    return success, result
+end
+
+-- [[ AIMBOT LOGIC ]]
+local function get_closest_player()
+    local closest_player = nil
+    local shortest_distance = UI_STATE.Aimbot_FOV
+
+    for _, player in pairs(Players:GetPlayers()) do
+        if player == LocalPlayer then continue end
+        if UI_STATE.TeamCheck_Enabled and player.Team == LocalPlayer.Team then continue end
+
+        local char = player.Character
+        if char and char:FindFirstChild("Head") then
+            local pos, on_screen = Camera:WorldToViewportPoint(char.Head.Position)
+            if on_screen then
+                local distance = (Vector2.new(pos.X, pos.Y) - UserInputService:GetMouseLocation()).Magnitude
+                if distance < shortest_distance then
+                    closest_player = player
+                    shortest_distance = distance
+                end
+            end
+        end
+    end
+    return closest_player
+end
+
+-- [[ STEALTH FLY LOGIC ]]
+local isFlying = false
+local function startFly()
+    isFlying = true
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        char.Humanoid:ChangeState(Enum.HumanoidStateType.Physics)
+    end
+end
+
+local function stopFly()
+    isFlying = false
+    local char = LocalPlayer.Character
+    if char and char:FindFirstChild("Humanoid") then
+        char.Humanoid:ChangeState(Enum.HumanoidStateType.GettingUp)
+    end
+end
+
+-- [[ UI CONSTRUCTION ]]
+local ScreenGui = Instance.new("ScreenGui")
+ScreenGui.Name = "GodTierHub"
+ScreenGui.ResetOnSpawn = false
+ScreenGui.Parent = game:GetService("CoreGui")
+
+local MainFrame = Instance.new("Frame")
+MainFrame.Size = UDim2.new(0, 600, 0, 400)
+MainFrame.Position = UDim2.new(0.5, -300, 0.5, -200)
+MainFrame.BackgroundColor3 = Color3.fromRGB(10, 10, 15)
+MainFrame.BorderSizePixel = 0
+MainFrame.Parent = ScreenGui
+
+local UICorner = Instance.new("UICorner", MainFrame)
+UICorner.CornerRadius = UDim.new(0, 12)
+
+local Stroke = Instance.new("UIStroke", MainFrame)
+Stroke.Color = Color3.fromRGB(60, 60, 100)
+Stroke.Thickness = 2
+
+local TopBar = Instance.new("Frame")
+TopBar.Size = UDim2.new(1, 0, 0, 50)
+TopBar.BackgroundColor3 = Color3.fromRGB(15, 15, 25)
+TopBar.BorderSizePixel = 0
+TopBar.Parent = MainFrame
+
+local TopCorner = Instance.new("UICorner", TopBar)
+TopCorner.CornerRadius = UDim.new(0, 12)
+
+local Title = Instance.new("TextLabel")
+Title.Text = " GOD TIER HUB | UNSTOPPABLE"
+Title.Size = UDim2.new(0, 300, 1, 0)
+Title.Position = UDim2.new(0, 15, 0, 0)
+Title.BackgroundTransparency = 1
+Title.TextColor3 = Color3.fromRGB(255, 255, 255)
+Title.TextXAlignment = Enum.TextXAlignment.Left
+Title.Font = Enum.Font.GothamBold
+Title.TextSize = 18
+Title.Parent = TopBar
+
+local NavContainer = Instance.new("Frame")
+NavContainer.Size = UDim2.new(0, 160, 1, -50)
+NavContainer.Position = UDim2.new(0, 0, 0, 50)
+NavContainer.BackgroundColor3 = Color3.fromRGB(15, 15, 20)
+NavContainer.BorderSizePixel = 0
+NavContainer.Parent = MainFrame
+
+local NavCorner = Instance.new("UICorner", NavContainer)
+NavCorner.CornerRadius = UDim.new(0, 12)
+
+local ContentContainer = Instance.new("Frame")
+ContentContainer.Size = UDim2.new(1, -180, 1, -70)
+ContentContainer.Position = UDim2.new(0, 170, 0, 60)
+ContentContainer.BackgroundTransparency = 1
+ContentContainer.Parent = MainFrame
+
+local TabPages = {}
+
+local function create_tab(name)
+    local Page = Instance.new("ScrollingFrame")
+    Page.Name = name .. "Page"
+    Page.Size = UDim2.new(1, 0, 1, 0)
+    Page.BackgroundTransparency = 1
+    Page.BorderSizePixel = 0
+    Page.ScrollBarThickness = 2
+    Page.Visible = (name == "Combat")
+    Page.Parent = ContentContainer
+    Instance.new("UIListLayout", Page).Padding = UDim.new(0, 12)
+    TabPages[name] = Page
+    return Page
+end
+
+local function create_button(text, parent, callback)
+    local btn = Instance.new("TextButton")
+    btn.Text = text
+    btn.Size = UDim2.new(1, -10, 0, 45)
+    btn.BackgroundColor3 = Color3.fromRGB(30, 30, 40)
+    btn.TextColor3 = Color3.fromRGB(200, 200, 200)
+    btn.Font = Enum.Font.GothamSemibold
+    btn.TextSize = 14
+    btn.Parent = parent
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    btn.MouseButton1Click:Connect(function() callback(btn) end)
+    return btn
+end
+
+-- [[ TABS ]]
+local Combat_Page = create_tab("Combat")
+create_button("Aimbot: OFF", Combat_Page, function(btn)
+    UI_STATE.Aimbot_Enabled = not UI_STATE.Aimbot_Enabled
+    btn.Text = "Aimbot: " .. (UI_STATE.Aimbot_Enabled and "ON" or "OFF")
+    btn.TextColor3 = UI_STATE.Aimbot_Enabled and Color3.fromRGB(0, 255, 150) or Color3.fromRGB(200, 200, 200)
+end)
+
+create_button("Smooth Lock: ON", Combat_Page, function(btn)
+    UI_STATE.Aimbot_Smooth = not UI_STATE.Aimbot_Smooth
+    btn.Text = "Smooth Lock: " .. (UI_STATE.Aimbot_Smooth and "ON" or "OFF")
+end)
+
+create_button("Triggerbot: OFF", Combat_Page, function(btn)
+    UI_STATE.Triggerbot_Enabled = not UI_STATE.Triggerbot_Enabled
+    btn.Text = "Triggerbot: " .. (UI_STATE.Triggerbot_Enabled and "ON" or "OFF")
+    btn.TextColor3 = UI_STATE.Triggerbot_Enabled and Color3.fromRGB(0, 255, 150) or Color3.fromRGB(200, 200, 200)
+end)
+
+local Move_Page = create_tab("Movement")
+create_button("Speed Hack: OFF", Move_Page, function(btn)
+    UI_STATE.Speed_Enabled = not UI_STATE.Speed_Enabled
+    btn.Text = "Speed Hack: " .. (UI_STATE.Speed_Enabled and "ON" or "OFF")
+end)
+
+create_button("Fly: OFF", Move_Page, function(btn)
+    UI_STATE.Fly_Enabled = not UI_STATE.Fly_Enabled
+    btn.Text = "Fly: " .. (UI_STATE.Fly_Enabled and "ON" or "OFF")
+    if UI_STATE.Fly_Enabled then startFly() else stopFly() end
+end)
+
+create_button("Noclip: OFF", Move_Page, function(btn)
+    UI_STATE.Noclip_Enabled = not UI_STATE.Noclip_Enabled
+    btn.Text = "Noclip: " .. (UI_STATE.Noclip_Enabled and "ON" or "OFF")
+end)
+
+local Visual_Page = create_tab("Visuals")
+create_button("ESP: OFF", Visual_Page, function(btn)
+    UI_STATE.ESP_Enabled = not UI_STATE.ESP_Enabled
+    btn.Text = "ESP: " .. (UI_STATE.ESP_Enabled and "ON" or "OFF")
+end)
+
+create_button("Fullbright: OFF", Visual_Page, function(btn)
+    UI_STATE.Fullbright_Enabled = not UI_STATE.Fullbright_Enabled
+    btn.Text = "Fullbright: " .. (UI_STATE.Fullbright_Enabled and "ON" or "OFF")
+end)
+
+create_button("FOV Changer: OFF", Visual_Page, function(btn)
+    UI_STATE.FOV_Enabled = not UI_STATE.FOV_Enabled
+    btn.Text = "FOV Changer: " .. (UI_STATE.FOV_Enabled and "ON" or "OFF")
+end)
+
+-- [[ NAVIGATION ]]
+local function switch_tab(tab_name)
+    UI_STATE.CurrentTab = tab_name
+    for name, page in pairs(TabPages) do page.Visible = (name == tab_name) end
+end
+
+local nav_layout = Instance.new("UIListLayout", NavContainer)
+nav_layout.Padding = UDim.new(0, 5)
+
+for tab_name, _ in pairs(TabPages) do
+    local btn = Instance.new("TextButton")
+    btn.Text = tab_name
+    btn.Size = UDim2.new(1, 0, 0, 40)
+    btn.BackgroundColor3 = Color3.fromRGB(25, 25, 35)
+    btn.TextColor3 = Color3.fromRGB(150, 150, 160)
+    btn.Font = Enum.Font.Gotham
+    btn.BorderSizePixel = 0
+    btn.Parent = NavContainer
+    Instance.new("UICorner", btn).CornerRadius = UDim.new(0, 8)
+    btn.MouseButton1Click:Connect(function() switch_tab(tab_name) end)
+end
+
+-- [[ ENGINE: MAIN LOOP ]]
+RunService.RenderStepped:Connect(function()
+    -- Aimbot
+    if UI_STATE.Aimbot_Enabled then
+        local target = get_closest_player()
+        if target and target.Character and target.Character:FindFirstChild("Head") then
+            local targetPos = target.Character.Head.Position
+            if UI_STATE.Aimbot_Smooth then
+                -- Smooth Interpolation
+                Camera.CFrame = Camera.CFrame:Lerp(CFrame.new(Camera.CFrame.Position, targetPos), 0.15)
+            else
+                -- Instant Snap
+                Camera.CFrame = CFrame.new(Camera.CFrame.Position, targetPos)
+            end
+        end
+    end
+
+    -- Fullbright
+    if UI_STATE.Fullbright_Enabled then
+        Lighting.Brightness = 2
+        Lighting.ClockTime = 14
+        Lighting.FogEnd = 100000
+        Lighting.GlobalShadows = false
+    end
+
+    -- FOV
+    Camera.FieldOfView = UI_STATE.FOV_Enabled and UI_STATE.CustomFOV or 70
+
+    -- Speed
+    if UI_STATE.Speed_Enabled and LocalPlayer.Character and LocalPlayer.Character:FindFirstChild("Humanoid") then
+        LocalPlayer.Character.Humanoid.WalkSpeed = UI_STATE.WalkSpeed
+    end
+
+    -- Noclip
+    if UI_STATE.Noclip_Enabled and LocalPlayer.Character then
+        for _, part in pairs(LocalPlayer.Character:GetDescendants()) do
+            if part:IsA("BasePart") then part.CanCollide = false end
+        end
+    end
+
+    -- Fly
+    if UI_STATE.Fly_Enabled and isFlying then
+        local char = LocalPlayer.Character
+        local root = char and char:FindFirstChild("HumanoidRootPart")
+        local hum = char and char:FindFirstChild("Humanoid")
+        if root and hum then
+            root.Velocity = Vector3.new(0, 0, 0)
+            local moveDir = Vector3.new(0,0,0)
+            if UserInputService:IsKeyDown(Enum.KeyCode.W) then moveDir = moveDir + Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.S) then moveDir = moveDir - Camera.CFrame.LookVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.A) then moveDir = moveDir - Camera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.D) then moveDir = moveDir + Camera.CFrame.RightVector end
+            if UserInputService:IsKeyDown(Enum.KeyCode.Space) then moveDir = moveDir + Vector3.new(0,1,0) end
+            if UserInputService:IsKeyDown(Enum.KeyCode.LeftControl) then moveDir = moveDir - Vector3.new(0,1,0) end
+            if moveDir.Magnitude > 0 then
+                root.CFrame = root.CFrame + (moveDir.Unit * (UI_STATE.FlySpeed / 10))
+            end
+            hum:ChangeState(Enum.HumanoidStateType.Physics)
+        end
+    end
+end)
+
+-- [[ ESP LOOP ]]
+task.spawn(function()
+    RunService.Heartbeat:Connect(function()
+        if not UI_STATE.ESP_Enabled then
+            for _, highlight in pairs(ESP_CACHE) do highlight:Destroy() end
+            ESP_CACHE = {}
+            return
+        end
+        for _, player in pairs(Players:GetPlayers()) do
+            if player == LocalPlayer then continue end
+            safe_call(function()
+                local char = player.Character
+                if not char or not char:FindFirstChild("HumanoidRootPart") then return end
+                local highlight = ESP_CACHE[player] or Instance.new("Highlight", char)
+                highlight.FillTransparency = ESP_SETTINGS.DefaultTransparency
+                highlight.OutlineTransparency = 0
+                highlight.DepthMode = Enum.HighlightDepthMode.AlwaysOnTop
+                ESP_CACHE[player] = highlight
+                local color = (UI_STATE.TeamCheck_Enabled and player.Team == LocalPlayer.Team) and ESP_SETTINGS.AllyColor or ESP_SETTINGS.EnemyColor
+                highlight.FillColor = color
+                highlight.OutlineColor = color
+            end)
+        end
+    end)
+end)
+
+-- [[ TOGGLE MENU ]]
+UserInputService.InputBegan:Connect(function(input, processed)
+    if not processed and input.KeyCode == Enum.KeyCode.RightControl then
+        UI_STATE.Visible = not UI_STATE.Visible
+        MainFrame.Visible = UI_STATE.Visible
+    end
+end)
